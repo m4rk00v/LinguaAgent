@@ -4,6 +4,10 @@
 
 Online English learning platform powered entirely by AI agents — no human instructors. Agents cover written practice, spoken practice, and student progress supervision.
 
+### Architecture Overview
+
+![LinguaAgent Architecture Overview](exp.png)
+
 ---
 
 ## 2. Tech Stack
