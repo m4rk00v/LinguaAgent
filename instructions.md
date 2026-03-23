@@ -15,7 +15,7 @@ Everything else depends on the DB being set up first.
 ### Step 1.2 — Create the base tables
 ```sql
 CREATE TABLE users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
   name TEXT,
   google_id TEXT UNIQUE,
@@ -24,16 +24,16 @@ CREATE TABLE users (
 );
 
 CREATE TABLE student_profiles (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id INT REFERENCES users(id) ON DELETE CASCADE,
   level TEXT DEFAULT 'beginner',
   total_sessions INT DEFAULT 0,
   streak_days INT DEFAULT 0
 );
 
 CREATE TABLE sessions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id),
+  id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id INT REFERENCES users(id),
   agent_type TEXT CHECK (agent_type IN ('chat', 'voice')),
   started_at TIMESTAMPTZ DEFAULT now(),
   ended_at TIMESTAMPTZ,
@@ -41,8 +41,8 @@ CREATE TABLE sessions (
 );
 
 CREATE TABLE tasks (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id),
+  id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id INT REFERENCES users(id),
   title TEXT NOT NULL,
   due_date DATE,
   completed_at TIMESTAMPTZ,
@@ -50,8 +50,8 @@ CREATE TABLE tasks (
 );
 
 CREATE TABLE grammar_notes (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id UUID REFERENCES sessions(id),
+  id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  session_id INT REFERENCES sessions(id),
   error_type TEXT,
   original_text TEXT,
   correction TEXT,
@@ -59,8 +59,8 @@ CREATE TABLE grammar_notes (
 );
 
 CREATE TABLE payments (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id),
+  id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id INT REFERENCES users(id),
   stripe_subscription_id TEXT,
   status TEXT DEFAULT 'active',
   next_billing_date DATE
@@ -72,7 +72,7 @@ CREATE TABLE payments (
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE documents (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   content TEXT NOT NULL,
   embedding VECTOR(1536),
   metadata JSONB DEFAULT '{}',
@@ -94,7 +94,7 @@ CREATE OR REPLACE FUNCTION match_documents(
   filter_level TEXT DEFAULT NULL
 )
 RETURNS TABLE (
-  id UUID,
+  id INT,
   content TEXT,
   metadata JSONB,
   source_type TEXT,
