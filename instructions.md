@@ -74,7 +74,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE documents (
   id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   content TEXT NOT NULL,
-  embedding VECTOR(1536),
+  embedding VECTOR(768),
   metadata JSONB DEFAULT '{}',
   source_type TEXT CHECK (source_type IN ('course', 'profile', 'policy')),
   created_at TIMESTAMPTZ DEFAULT now()
@@ -88,7 +88,7 @@ CREATE INDEX ON documents
 ### Step 1.4 — Create semantic search function
 ```sql
 CREATE OR REPLACE FUNCTION match_documents(
-  query_embedding VECTOR(1536),
+  query_embedding VECTOR(768),
   match_count INT DEFAULT 5,
   filter_source TEXT DEFAULT NULL,
   filter_level TEXT DEFAULT NULL
@@ -132,8 +132,13 @@ mkdir backend && cd backend
 python -m venv venv
 source venv/bin/activate
 
-pip install langchain langchain-anthropic langchain-community
-pip install supabase openai
+# pip install langchain langchain-anthropic langchain-community
+# pip install supabase openai
+# pip install python-dotenv redis
+
+# Ollama alternative (free, local)
+pip install langchain langchain-ollama langchain-community
+pip install supabase
 pip install python-dotenv redis
 ```
 
@@ -142,8 +147,11 @@ Create `backend/.env`:
 ```env
 SUPABASE_URL=https://xxx.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=eyJ...
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...          # only for embeddings
+# ANTHROPIC_API_KEY=sk-ant-...
+# OPENAI_API_KEY=sk-...          # only for embeddings
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3
+OLLAMA_EMBED_MODEL=nomic-embed-text
 REDIS_URL=redis://localhost:6379
 ```
 
@@ -152,7 +160,8 @@ Create `backend/rag/ingest.py`:
 ```python
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
-from openai import OpenAI
+# from openai import OpenAI  # replaced by Ollama
+from langchain_ollama import OllamaEmbeddings
 from supabase import create_client
 import os
 from dotenv import load_dotenv
@@ -160,7 +169,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
-openai_client = OpenAI()
+embeddings_model = OllamaEmbeddings(
+    model=os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text"),
+    base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+)
 
 # 1. Load documents
 loader = DirectoryLoader(
@@ -180,10 +192,7 @@ chunks = splitter.split_documents(docs)
 
 # 3. Generate embeddings and insert into Supabase
 for chunk in chunks:
-    embedding = openai_client.embeddings.create(
-        input=chunk.page_content,
-        model="text-embedding-3-small"
-    ).data[0].embedding
+    embedding = embeddings_model.embed_query(chunk.page_content)
 
     supabase.table("documents").insert({
         "content": chunk.page_content,
@@ -228,20 +237,21 @@ Create more similar files for other topics and levels.
 ### Step 2.5 — Retrieval module
 Create `backend/rag/retriever.py`:
 ```python
-from openai import OpenAI
+# from openai import OpenAI  # replaced by Ollama
+from langchain_ollama import OllamaEmbeddings
 from supabase import create_client
 import os
 
-openai_client = OpenAI()
+embeddings_model = OllamaEmbeddings(
+    model=os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text"),
+    base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+)
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
 
 def retrieve_context(query: str, source_type: str = None, level: str = None, k: int = 5):
     """Search for the most relevant chunks in pgvector."""
 
-    query_embedding = openai_client.embeddings.create(
-        input=query,
-        model="text-embedding-3-small"
-    ).data[0].embedding
+    query_embedding = embeddings_model.embed_query(query)
 
     result = supabase.rpc("match_documents", {
         "query_embedding": query_embedding,
@@ -298,14 +308,16 @@ brew services start redis
 ### Step 3.2 — Chat Agent
 Create `backend/agents/chat_agent.py`:
 ```python
-from langchain_anthropic import ChatAnthropic
+# from langchain_anthropic import ChatAnthropic  # replaced by Ollama
+from langchain_ollama import ChatOllama
 from langchain.schema import SystemMessage, HumanMessage, AIMessage
 from rag.retriever import retrieve_context
 import redis
 import json
 import os
 
-llm = ChatAnthropic(model="claude-sonnet-4-20250514", anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"))
+# llm = ChatAnthropic(model="claude-sonnet-4-20250514", anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"))
+llm = ChatOllama(model=os.getenv("OLLAMA_MODEL", "llama3"), base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
 redis_client = redis.from_url(os.getenv("REDIS_URL"))
 
 SYSTEM_PROMPT = """You are an English teacher. Have a natural conversation with the student.
@@ -366,14 +378,16 @@ def chat(user_id: str, session_id: str, message: str, level: str = "beginner"):
 ### Step 3.3 — Voice Agent
 Create `backend/agents/voice_agent.py`:
 ```python
-from langchain_anthropic import ChatAnthropic
+# from langchain_anthropic import ChatAnthropic  # replaced by Ollama
+from langchain_ollama import ChatOllama
 from langchain.schema import SystemMessage, HumanMessage, AIMessage
 from rag.retriever import retrieve_context
 import redis
 import json
 import os
 
-llm = ChatAnthropic(model="claude-sonnet-4-20250514", anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"))
+# llm = ChatAnthropic(model="claude-sonnet-4-20250514", anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"))
+llm = ChatOllama(model=os.getenv("OLLAMA_MODEL", "llama3"), base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
 redis_client = redis.from_url(os.getenv("REDIS_URL"))
 
 SYSTEM_PROMPT = """You are a friendly English conversation partner. Focus on keeping
@@ -445,13 +459,15 @@ def end_voice_session(session_id: str):
 ### Step 3.4 — Inspector Agent
 Create `backend/agents/inspector_agent.py`:
 ```python
-from langchain_anthropic import ChatAnthropic
+# from langchain_anthropic import ChatAnthropic  # replaced by Ollama
+from langchain_ollama import ChatOllama
 from langchain.schema import SystemMessage
 from rag.retriever import retrieve_context
 from supabase import create_client
 import os
 
-llm = ChatAnthropic(model="claude-sonnet-4-20250514", anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"))
+# llm = ChatAnthropic(model="claude-sonnet-4-20250514", anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"))
+llm = ChatOllama(model=os.getenv("OLLAMA_MODEL", "llama3"), base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
 
 def update_student_level(user_id: str):
@@ -965,6 +981,61 @@ Connect to the API at `localhost:8000`. Auth with NextAuth + Google OAuth.
 - SSL certificate via AWS Certificate Manager or Let's Encrypt
 - Domain on Route 53
 - HTTPS on the ALB
+
+---
+
+## Backend Checklist
+
+### Phase 1 — Database & Schema
+- [x] Crear proyecto en Supabase
+- [x] Crear tablas relacionales (users, student_profiles, sessions, tasks, grammar_notes, payments)
+- [x] Habilitar pgvector + tabla documents
+- [x] Crear función match_documents
+- [x] Insertar datos de ejemplo (seed)
+- [x] Actualizar dimensiones VECTOR(1536) → VECTOR(768) para Ollama
+
+### Phase 2 — RAG Pipeline
+- [x] Crear `backend/.env` con variables de entorno
+- [x] Crear contenido de cursos de ejemplo (`backend/data/courses/`)
+- [x] Crear `backend/rag/ingest.py` — ingesta de contenido a pgvector
+- [x] Crear `backend/rag/retriever.py` — búsqueda semántica
+- [x] Probar pipeline: ingestar + consultar con Ollama
+
+### Phase 3 — LangChain Agents
+- [x] Instalar y configurar Redis (Docker: `redis:7-alpine` en `localhost:6379`)
+- [x] Crear `backend/agents/chat_agent.py` — práctica escrita
+- [ ] Crear `backend/agents/voice_agent.py` — práctica oral
+- [x] Crear `backend/agents/inspector_agent.py` — supervisor
+- [ ] Probar los 3 agentes con RAG + Redis + Ollama
+
+### Phase 4 — API Gateway
+- [x] Instalar FastAPI + uvicorn + python-jose
+- [x] Crear `backend/api/main.py` — endpoints chat, tasks, level, report
+- [x] Implementar validación JWT (HS256)
+- [x] Probar endpoints con curl (`bash local_test/test_api.sh`)
+
+### Phase 5 — Automation (n8n)
+- [x] Instalar n8n (Docker: `n8nio/n8n` en `localhost:5678`)
+- [x] Workflow: reminder diario de tareas pendientes (`n8n_workflows/daily_reminder.json`)
+- [x] Workflow: pago fallido (`n8n_workflows/failed_payment.json`)
+- [x] Workflow: reporte semanal (`n8n_workflows/weekly_report.json`)
+- [x] Workflow: escalación HITL (`n8n_workflows/hitl_escalation.json`)
+- [x] Conectar Inspector Agent con n8n via webhooks (`check_and_remind` + `trigger_n8n_workflow`)
+
+### Phase 6 — Voice Pipeline
+- [ ] Instalar Whisper + ElevenLabs SDK
+- [ ] Crear `backend/services/voice_service.py` (STT + TTS)
+- [ ] Endpoint full voice: audio → texto → agente → texto → audio
+
+### Phase 7 — Payments
+- [ ] Configurar Stripe
+- [ ] Crear `backend/api/stripe_webhook.py`
+- [ ] Probar flujo checkout + webhook
+
+### Phase 8 — Deploy
+- [ ] Dockerfile para el backend
+- [ ] docker-compose.yml (API + Redis + n8n)
+- [ ] Deploy en AWS (ECS + ElastiCache + EC2 para n8n)
 
 ---
 

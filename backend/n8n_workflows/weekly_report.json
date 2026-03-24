@@ -1,0 +1,180 @@
+{
+  "name": "Weekly Report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 10,
+              "triggerAtDay": 0
+            }
+          ]
+        }
+      },
+      "name": "Every Sunday at 10am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {},
+      "name": "Manual Test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 200]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/dev/token/service",
+        "options": {}
+      },
+      "name": "Get Service Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "user_ids",
+              "value": "[\"1\", \"2\", \"3\"]",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Active User IDs",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const userIds = JSON.parse($input.first().json.user_ids);\nreturn userIds.map(id => ({ json: { user_id: id, token: $('Get Service Token').first().json.token } }));"
+      },
+      "name": "Split Into Users",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:8000/api/report/{{ $json.user_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.token }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "name": "Generate Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "subject",
+              "value": "LinguaAgent: Your Weekly Progress Report",
+              "type": "string"
+            },
+            {
+              "name": "body",
+              "value": "={{ $json.report }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Build Email",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1100, 0]
+    }
+  ],
+  "connections": {
+    "Every Sunday at 10am": {
+      "main": [
+        [
+          {
+            "node": "Get Service Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test": {
+      "main": [
+        [
+          {
+            "node": "Get Service Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Service Token": {
+      "main": [
+        [
+          {
+            "node": "Active User IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Active User IDs": {
+      "main": [
+        [
+          {
+            "node": "Split Into Users",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Into Users": {
+      "main": [
+        [
+          {
+            "node": "Generate Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Report": {
+      "main": [
+        [
+          {
+            "node": "Build Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,218 @@
+{
+  "name": "Failed Payment",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "stripe-payment-failed",
+        "options": {}
+      },
+      "name": "Stripe Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.body.type }}",
+              "rightValue": "invoice.payment_failed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Is Payment Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:8000/dev/token/service",
+        "options": {}
+      },
+      "name": "Get Service Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, -100]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "subject",
+              "value": "LinguaAgent: Payment Failed",
+              "type": "string"
+            },
+            {
+              "name": "body",
+              "value": "Hi,\n\nWe were unable to process your payment. Please update your payment method to continue using LinguaAgent.\n\nIf the issue is not resolved within 7 days, your access will be suspended.\n\nThank you,\nLinguaAgent Team",
+              "type": "string"
+            },
+            {
+              "name": "subscription_id",
+              "value": "={{ $('Stripe Webhook').item.json.body.data.object.subscription }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Build Notification",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [660, -100]
+    },
+    {
+      "parameters": {
+        "amount": 7,
+        "unit": "days"
+      },
+      "name": "Wait 7 Days",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [880, -100]
+    },
+    {
+      "parameters": {
+        "url": "=http://host.docker.internal:8000/api/tasks",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Get Service Token').item.json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Check Still Unpaid",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, -100]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "action",
+              "value": "suspend_access",
+              "type": "string"
+            },
+            {
+              "name": "message",
+              "value": "Your LinguaAgent account has been suspended due to unpaid invoice. Please update your payment method to restore access.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Suspend Access",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1320, -100]
+    },
+    {
+      "parameters": {},
+      "name": "Not Payment Failed",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [440, 100]
+    }
+  ],
+  "connections": {
+    "Stripe Webhook": {
+      "main": [
+        [
+          {
+            "node": "Is Payment Failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Payment Failed?": {
+      "main": [
+        [
+          {
+            "node": "Get Service Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Not Payment Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Service Token": {
+      "main": [
+        [
+          {
+            "node": "Build Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Notification": {
+      "main": [
+        [
+          {
+            "node": "Wait 7 Days",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 7 Days": {
+      "main": [
+        [
+          {
+            "node": "Check Still Unpaid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Still Unpaid": {
+      "main": [
+        [
+          {
+            "node": "Suspend Access",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

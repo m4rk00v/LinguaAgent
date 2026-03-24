@@ -1,6 +1,19 @@
--- 003_search_function.sql
--- Semantic search function for RAG retrieval
+-- 005_update_vector_dimensions.sql
+-- Change vector dimensions from 1536 (OpenAI) to 768 (Ollama nomic-embed-text)
 
+-- 1. Drop existing index
+DROP INDEX IF EXISTS documents_embedding_idx;
+
+-- 2. Change column dimension
+ALTER TABLE documents
+  ALTER COLUMN embedding TYPE VECTOR(768);
+
+-- 3. Recreate index
+CREATE INDEX ON documents
+  USING ivfflat (embedding vector_cosine_ops)
+  WITH (lists = 100);
+
+-- 4. Recreate search function with new dimension
 CREATE OR REPLACE FUNCTION match_documents(
   query_embedding VECTOR(768),
   match_count INT DEFAULT 5,
